@@ -18,6 +18,12 @@ class ValueBetFinder:
         self.root.geometry("800x600")
         self.root.configure(bg='#f0f0f0')
         
+        # Add plans
+        self.PLANS = ['EUROPEAN', 'WORLDWIDE', 'CUSTOM']
+        
+        # Add time intervals (in hours)
+        self.TIME_INTERVALS = ['4', '6', '8', '10', '12', '16', '24']
+        
         # Market mappings for predictions
         self.PREDICTION_TYPES = {
             'fulltime-result-probability': {
@@ -42,6 +48,9 @@ class ValueBetFinder:
                 'no': 'BTTS No'
             }
         }
+
+        # Initialize status variable first
+        self.status_var = tk.StringVar()
         
         # Style configuration
         self.style = ttk.Style()
@@ -49,31 +58,67 @@ class ValueBetFinder:
         self.style.configure('Custom.TEntry', padding=2)
         self.style.configure('Custom.TCombobox', padding=2)
         
+        self.setup_gui()
+        
+        # Initialize auto-refresh
+        self.auto_refresh_job = None
+        self.start_auto_refresh()
+        
+        self.update_status('Application initialized successfully.')
+
+    def update_status(self, message):
+        """Update status bar with message"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.status_var.set(f'[{timestamp}] {message}')
+        logger.info(message)
+
+    def setup_gui(self):
+        """Set up the GUI components"""
         # Create main frame with padding
-        main_frame = ttk.Frame(root)
+        main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Input fields frame
         input_frame = ttk.Frame(main_frame)
         input_frame.pack(fill=tk.X, padx=5, pady=5)
         
+        # Add Sportmonks Plan dropdown
+        self.create_labeled_combobox(input_frame, "SPORTMONKS PLAN", 
+                                   values=self.PLANS, 
+                                   default="EUROPEAN",
+                                   row=0)
+        
         # Create input fields with proper spacing and alignment
         self.create_labeled_input(input_frame, "API TOKEN", 
                                 default="zlm2XyjwUTq2nKk1QJM0TB4t0hP0j5RepYyyz9HdbZUEXcPKLaTtHjjfhzf9", 
-                                row=0)
-        self.create_labeled_input(input_frame, "VALUE BET THRESHOLD", default="11.57", row=1)
-        self.create_labeled_input(input_frame, "BETFAIR COMMISSION", default="6.52", row=2)
-        self.create_labeled_input(input_frame, "BETFAIR DISCOUNT", default="20", row=3)
-        self.create_labeled_input(input_frame, "BET UNIT", default="8", row=4)
+                                row=1)
+        
+        # Add Time Interval dropdown
+        self.create_labeled_combobox(input_frame, "TIME INTERVAL", 
+                                   values=self.TIME_INTERVALS,
+                                   default="6",
+                                   row=2)
+        
+        self.create_labeled_input(input_frame, "VALUE BET THRESHOLD", default="11.57", row=3)
+        self.create_labeled_input(input_frame, "BETFAIR COMMISSION", default="6.52", row=4)
+        self.create_labeled_input(input_frame, "BETFAIR DISCOUNT", default="20", row=5)
+        self.create_labeled_input(input_frame, "BET UNIT", default="8", row=6)
         
         # Buttons frame
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, padx=5, pady=5)
         
+        # Add Get Value Bet List button
         ttk.Button(button_frame, text="GET VALUE BET LIST", 
                   command=self.get_value_bets).pack(side=tk.LEFT, padx=2)
+                  
+        # Add Export to CSV button
         ttk.Button(button_frame, text="EXPORT TO CSV",
                   command=self.export_to_csv).pack(side=tk.LEFT, padx=2)
+                  
+        # Add Refresh List button
+        ttk.Button(button_frame, text="REFRESH LIST",
+                  command=self.refresh_list).pack(side=tk.LEFT, padx=2)
         
         # Create Treeview with frame
         tree_frame = ttk.Frame(main_frame)
@@ -83,12 +128,9 @@ class ValueBetFinder:
         self.create_treeview(tree_frame)
         
         # Status bar
-        self.status_var = tk.StringVar()
-        self.status_bar = ttk.Label(root, textvariable=self.status_var, 
+        self.status_bar = ttk.Label(self.root, textvariable=self.status_var, 
                                   relief=tk.SUNKEN, anchor=tk.W, wraplength=780)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        self.update_status('Application initialized successfully.')
 
     def create_labeled_input(self, parent, label, default="", row=0):
         """Create labeled input field"""
@@ -97,6 +139,19 @@ class ValueBetFinder:
         
         var = tk.StringVar(value=default)
         widget = ttk.Entry(parent, textvariable=var, width=32, style='Custom.TEntry')
+        widget.grid(row=row, column=1, sticky=tk.W, pady=2)
+        var_name = label.lower().replace(' ', '_')
+        setattr(self, var_name, var)
+        return var
+
+    def create_labeled_combobox(self, parent, label, values, default="", row=0):
+        """Create labeled combobox"""
+        label_widget = ttk.Label(parent, text=label, style='Header.TLabel')
+        label_widget.grid(row=row, column=0, sticky=tk.W, pady=2)
+        
+        var = tk.StringVar(value=default)
+        widget = ttk.Combobox(parent, textvariable=var, values=values, 
+                            width=29, style='Custom.TCombobox', state='readonly')
         widget.grid(row=row, column=1, sticky=tk.W, pady=2)
         var_name = label.lower().replace(' ', '_')
         setattr(self, var_name, var)
@@ -128,12 +183,7 @@ class ValueBetFinder:
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(0, weight=1)
 
-    def update_status(self, message):
-        """Update status bar with message"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.status_var.set(f'[{timestamp}] {message}')
-        logger.info(message)
-
+    # Rest of the methods remain the same as in the previous implementation
     def calculate_betfair_adjust(self, odds):
         """Calculate adjusted Betfair odds considering commission and discount"""
         commission = float(self.betfair_commission.get()) / 100
@@ -163,12 +213,34 @@ class ValueBetFinder:
         
         return results
 
+    def get_fixtures_by_time_interval(self):
+        """Get fixtures based on selected time interval"""
+        interval_hours = int(self.time_interval.get())
+        now = datetime.now()
+        end_time = now + timedelta(hours=interval_hours)
+        return now, end_time
+
+    def start_auto_refresh(self):
+        """Start auto-refresh timer"""
+        if self.auto_refresh_job:
+            self.root.after_cancel(self.auto_refresh_job)
+        self.auto_refresh_job = self.root.after(600000, self.refresh_list)
+
+    def refresh_list(self):
+        """Manually refresh the value bets list"""
+        self.update_status('Refreshing value bets list...')
+        self.get_value_bets()
+        self.start_auto_refresh()
+
     def get_value_bets(self):
         """Process predictions and find value bets"""
         try:
             # Clear existing items
             for item in self.tree.get_children():
                 self.tree.delete(item)
+            
+            # Get time interval range
+            start_time, end_time = self.get_fixtures_by_time_interval()
             
             api_token = self.api_token.get()
             value_threshold = float(self.value_bet_threshold.get())
@@ -177,10 +249,12 @@ class ValueBetFinder:
             url = "https://api.sportmonks.com/v3/football/predictions/probabilities"
             params = {
                 "api_token": api_token,
-                "include": "type;fixture"
+                "include": "type;fixture",
+                "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S")
             }
             
-            self.update_status("Fetching predictions...")
+            self.update_status(f"Fetching predictions for {self.sportmonks_plan.get()} plan...")
             response = requests.get(url, params=params)
             data = response.json()
             
@@ -194,14 +268,13 @@ class ValueBetFinder:
                 
                 for bet in processed_data:
                     true_odds = bet['true_odds']
-                    # Simulating Betfair odds (in real app, you'd get these from Betfair API)
-                    betfair_odds = true_odds * 0.95  # Example calculation
+                    betfair_odds = true_odds * 0.95
                     
                     betfair_adjust = self.calculate_betfair_adjust(betfair_odds)
                     value = ((betfair_adjust / true_odds) - 1) * 100
                     
                     if abs(value) >= value_threshold:
-                        k_factor = true_odds  # K-factor equals true odds
+                        k_factor = true_odds
                         money_to_bet = bet_unit * k_factor
                         
                         tag = 'positive' if value > 0 else 'negative'
@@ -216,8 +289,8 @@ class ValueBetFinder:
                         value_bets_found += 1
             
             # Configure tag colors
-            self.tree.tag_configure('positive', background='#90EE90')  # Light green
-            self.tree.tag_configure('negative', background='#FFB6C1')  # Light red
+            self.tree.tag_configure('positive', background='#90EE90')
+            self.tree.tag_configure('negative', background='#FFB6C1')
             
             self.update_status(f"Found {value_bets_found} value bets")
             
@@ -242,13 +315,13 @@ class ValueBetFinder:
                         "Competition", "Market Type", "In-Play"
                     ])
                     
-                    current_time = datetime.now()
-                    
                     for item in self.tree.get_children():
                         values = self.tree.item(item)['values']
                         event_parts = values[0].split(' (')
                         event = event_parts[0]
                         selection = event_parts[1].rstrip(')')
+                        
+                        current_time = datetime.now()
                         
                         writer.writerow([
                             current_time.strftime("%Y-%m-%d"),
@@ -257,9 +330,9 @@ class ValueBetFinder:
                             "Match Odds",
                             selection,
                             "Back",
-                            values[1],  # Betfair adjusted odds
-                            values[5],  # Money to bet
-                            values[3].rstrip('%'),  # Value %
+                            values[1],
+                            values[5],
+                            values[3].rstrip('%'),
                             "Football",
                             "",
                             "Match Odds",
